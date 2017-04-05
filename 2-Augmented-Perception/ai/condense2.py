@@ -93,10 +93,14 @@ def loadNewsGroups(categories = ['comp.sys.mac.hardware', 'comp.windows.x', 'mis
 
 def loadSenateSmall():
     print("Loading senate data")
-    senReleasesDF = pandas.read_csv("data/senReleasesDF.csv")
+    senReleasesDF = pandas.read_csv("data/senReleasesTraining.csv")
     senReleasesDF = senReleasesDF.dropna(axis=0, how='any')
 
     print("Converting to vectors")
+    stop_words_nltk = nltk.corpus.stopwords.words('english')
+    snowball = nltk.stem.snowball.SnowballStemmer('english')
+    wordnet = nltk.stem.WordNetLemmatizer()
+
     senReleasesDF['tokenized_sents'] = senReleasesDF['text'].apply(lambda x: [nltk.word_tokenize(s) for s in nltk.sent_tokenize(x)])
     senReleasesDF['normalized_sents'] = senReleasesDF['tokenized_sents'].apply(lambda x: [normlizeTokens(s, stopwordLst = stop_words_nltk, stemmer = None) for s in x])
 
@@ -181,7 +185,7 @@ def loadNYTmodel():
     return gensim.models.word2vec.Word2Vec.load_word2vec_format('data/nytimes_cbow.reduced.txt')
 
 def loadResumeModel():
-    return gensim.models.word2vec.Word2Vec.load('/mnt/efs/resources/shared/resume-data')
+        return gensim.models.word2vec.Word2Vec.load('/mnt/efs/resources/shared/resume-data/resume.model')
 
 def clusteringMetrics(clf, df):
     print("Homogeneity: {:0.3f}".format(sklearn.metrics.homogeneity_score(df['category'], clf.labels_)))

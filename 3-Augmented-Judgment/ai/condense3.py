@@ -122,22 +122,59 @@ def loadEmailZip(targetFile, category):
     return pandas.DataFrame(emailDict)
 
 def loadSpam(holdBackFraction = .2):
+    print("Loading Spam")
     spamDF = loadEmailZip('data/Spam_Data/20021010_spam.tar.bz2', 'spam')
+    print("Loading Ham")
     spamDF = spamDF.append(loadEmailZip('data/Spam_Data/20021010_hard_ham.tar.bz2', 'not spam'), ignore_index= True)
     spamDF = spamDF.append(loadEmailZip('data/Spam_Data/20021010_easy_ham.tar.bz2', 'not spam'), ignore_index= True)
     spamDF['is_spam'] = [c == 'spam' for c in spamDF['category']]
+    spamDF['binary'] = spamDF['is_spam']
 
+    print("Converting to vectors")
     stop_words_nltk = nltk.corpus.stopwords.words('english')
     snowball = nltk.stem.snowball.SnowballStemmer('english')
 
 
-    spamDF['tokenized_emails'] = spamDF['text'].apply(lambda x: nltk.word_tokenize(x))
-    spamDF['normalized_emails'] = spamDF['tokenized_emails'].apply(lambda x: normlizeTokens(x, stopwordLst = None, stemmer = None))
+    spamDF['tokenized_text'] = spamDF['text'].apply(lambda x: nltk.word_tokenize(x))
+    spamDF['normalized_text'] = spamDF['tokenized_text'].apply(lambda x: normlizeTokens(x, stopwordLst = None, stemmer = None))
+
+    ngCountVectorizer = sklearn.feature_extraction.text.TfidfVectorizer(max_df=0.5, min_df=3, stop_words='english', norm='l2')
+    newsgroupsVects = ngCountVectorizer.fit_transform([' '.join(l) for l in spamDF['normalized_text']])
+    spamDF['vect'] = [np.array(v) for v in newsgroupsVects.todense()]
 
     shuffledSpamDF = spamDF.reindex(np.random.permutation(spamDF.index))
     holdBackIndex = int(holdBackFraction * len(shuffledSpamDF))
     train_data = shuffledSpamDF[holdBackIndex:].copy()
     test_data = shuffledSpamDF[:holdBackIndex].copy()
+
+    return train_data, test_data
+
+def loadObamaClinton(holdBackFraction = .2):
+    print("Loading data")
+    ObamaClintonReleases = pandas.read_csv("data/ObamaClintonReleases.csv")
+    ObamaClintonReleases = ObamaClintonReleases.dropna(axis=0, how='any')
+
+    print("Converting to vectors")
+    stop_words_nltk = nltk.corpus.stopwords.words('english')
+    snowball = nltk.stem.snowball.SnowballStemmer('english')
+    wordnet = nltk.stem.WordNetLemmatizer()
+
+    ObamaClintonReleases['tokenized_text'] = ObamaClintonReleases['text'].apply(lambda x: nltk.word_tokenize(x))
+    ObamaClintonReleases['normalized_text'] = ObamaClintonReleases['tokenized_text'].apply(lambda x: normlizeTokens(x, stopwordLst = stop_words_nltk, stemmer = snowball))
+
+    ObamaClintonReleases['IsObama'] = [s == 'Obama' for s in ObamaClintonReleases['targetSenator']]
+    ObamaClintonReleases['binary'] = ObamaClintonReleases['IsObama']
+
+    ObamaClintonReleases['category'] = ObamaClintonReleases['targetSenator']
+
+    ngCountVectorizer = sklearn.feature_extraction.text.TfidfVectorizer(max_df=0.5, min_df=3, stop_words='english', norm='l2')
+    newsgroupsVects = ngCountVectorizer.fit_transform([' '.join(l) for l in ObamaClintonReleases['normalized_text']])
+    ObamaClintonReleases['vect'] = [np.array(v) for v in newsgroupsVects.todense()]
+
+    ObamaClintonReleases = ObamaClintonReleases.reindex(np.random.permutation(ObamaClintonReleases.index))
+    holdBackIndex = int(holdBackFraction * len(ObamaClintonReleases))
+    train_data = ObamaClintonReleases[holdBackIndex:].copy()
+    test_data = ObamaClintonReleases[:holdBackIndex].copy()
 
     return train_data, test_data
 
@@ -183,6 +220,13 @@ def spam_probability(word_probs, message_words):
     #return prob_if_spam / (prob_if_spam + prob_if_not_spam) #Compute whole thing and return
     return P
 
+def p_spam_given_word(word_prob):
+    """uses bayes's theorem to compute p(spam | message contains word)"""
+    # word_prob is one of the triplets produced by word_probabilities
+
+    word, prob_if_spam, prob_if_not_spam = word_prob
+    return prob_if_spam / (prob_if_spam + prob_if_not_spam)
+
 class NaiveBayesClassifier:
 
     def __init__(self, k=0.5):
@@ -206,21 +250,23 @@ class NaiveBayesClassifier:
         return spam_probability(self.word_probs, message) #Now we have all we need to classify a message
 
 def evaluateClassifier(clf, testDF):
-    classified = [(row['category'], clf.classify(row['normalized_emails']))
+    classified = [(row['binary'], clf.classify(row['normalized_text']))
                   for index, row in testDF.iterrows()]
-    counts = collections.Counter((actual == 'spam', predicted_probability > 0.5)
+    counts = collections.Counter((actual == True, predicted_probability > 0.5)
                          for actual, predicted_probability in classified)
     precision = counts[(True,True)]/(counts[(False,True)]+counts[(True,True)]) #True positives over all positive predictions
-    print(precision)
 
     recall = counts[(True,True)]/(counts[(True,False)]+counts[(True,True)])#what fraction of positives identified
-    print(recall)
 
     f_measure = 2 * (precision * recall)/(precision + recall)
-    print (f_measure)
+    print("precision: {:.3f}\nrecall: {:.3f}\nf_measure: {:.3f}".format(precision, recall, f_measure))
+
+    words = sorted(clf.word_probs,key=p_spam_given_word)
+    print("\nTop category 1 words:\n{}".format('\n'.join(["{}, {:.3f}".format(w, p2) for w, p1, p2 in words[:10]])))
+    print("\nTop category 2 words:\n{}".format('\n'.join(["{}, {:.3f}".format(w, p1) for w, p1, p2 in words[-10:]])))
 
 def plotClassifier(clf, testDF):
-    x, y, _ = sklearn.metrics.roc_curve(testDF['is_spam'], [clf.classify(d) for d in testDF['normalized_emails']])
+    x, y, _ = sklearn.metrics.roc_curve(testDF['binary'], [clf.classify(d) for d in testDF['normalized_text']])
     roc_auc = sklearn.metrics.auc(x,y)
     plt.figure()
     plt.plot(x,y, color = 'darkorange', lw = 2, label='ROC curve (area = %0.2f)' % roc_auc)

@@ -50,6 +50,8 @@ import tarfile
 import zipfile
 import io
 
+stop_words_nltk = nltk.corpus.stopwords.words('english')
+snowball = nltk.stem.snowball.SnowballStemmer('english')
 
 def normlizeTokens(tokenLst, stopwordLst = None, stemmer = None, lemmer = None, vocab = None):
     #We can use a generator here as we just need to iterate over it
@@ -76,30 +78,8 @@ def normlizeTokens(tokenLst, stopwordLst = None, stemmer = None, lemmer = None, 
 
     return list(workingIter)
 
-#Cluster Detection
 
-def loadNewsGroups(categories = ['comp.sys.mac.hardware', 'comp.windows.x', 'misc.forsale', 'rec.autos']):
-    newsgroupsCategories = categories
-    newsgroups = sklearn.datasets.fetch_20newsgroups(subset='train', data_home = 'data/sklearnData')
-    newsgroupsDF = pandas.DataFrame(columns = ['text', 'category', 'source_file'])
-
-    for category in newsgroupsCategories:
-        print("Loading data for: {}".format(category))
-        ng = sklearn.datasets.fetch_20newsgroups(subset='train', categories = [category], remove=['headers', 'footers', 'quotes'], data_home = 'data')
-        newsgroupsDF = newsgroupsDF.append(pandas.DataFrame({'text' : ng.data, 'category' : [category] * len(ng.data), 'source_file' : ng.filenames}), ignore_index=True)
-
-    print("Converting to vectors")
-    #tokenize
-    newsgroupsDF['tokenized_text'] = newsgroupsDF['text'].apply(lambda x: nltk.word_tokenize(x))
-    newsgroupsDF['normalized_text'] = newsgroupsDF['tokenized_text'].apply(lambda x: normlizeTokens(x))
-
-    ngCountVectorizer = sklearn.feature_extraction.text.TfidfVectorizer(max_df=0.5, min_df=3, stop_words='english', norm='l2')
-    newsgroupsVects = ngCountVectorizer.fit_transform([' '.join(l) for l in newsgroupsDF['normalized_text']])
-    newsgroupsDF['vect'] = [np.array(v) for v in newsgroupsVects.todense()]
-
-    return newsgroupsDF
-
-def loadEmailZip(targetFile, category):
+def _loadEmailZip(targetFile, category):
     # regex for stripping out the leading "Subject:" and any spaces after it
     subject_regex = re.compile(r"^Subject:\s+")
 
@@ -121,19 +101,42 @@ def loadEmailZip(targetFile, category):
     emailDict['category'] = [category] * len(emailDict['text'])
     return pandas.DataFrame(emailDict)
 
+def loadNewsGroups(holdBackFraction = .2, categories = ['comp.sys.mac.hardware', 'comp.windows.x', 'misc.forsale', 'rec.autos']):
+    newsgroupsCategories = categories
+    newsgroups = sklearn.datasets.fetch_20newsgroups(subset='train', data_home = 'data')
+    newsgroupsDF = pandas.DataFrame(columns = ['text', 'category', 'source_file'])
+
+    for category in newsgroupsCategories:
+        print("Loading data for: {}".format(category))
+        ng = sklearn.datasets.fetch_20newsgroups(subset='train', categories = [category], remove=['headers', 'footers', 'quotes'], data_home = 'data')
+        newsgroupsDF = newsgroupsDF.append(pandas.DataFrame({'text' : ng.data, 'category' : [category] * len(ng.data), 'source_file' : ng.filenames}), ignore_index=True)
+
+    print("Converting to vectors")
+    #tokenize
+    newsgroupsDF['tokenized_text'] = newsgroupsDF['text'].apply(lambda x: nltk.word_tokenize(x))
+    newsgroupsDF['normalized_text'] = newsgroupsDF['tokenized_text'].apply(lambda x: normlizeTokens(x))
+
+    ngCountVectorizer = sklearn.feature_extraction.text.TfidfVectorizer(max_df=0.5, min_df=3, stop_words='english', norm='l2')
+    newsgroupsVects = ngCountVectorizer.fit_transform([' '.join(l) for l in newsgroupsDF['normalized_text']])
+    newsgroupsDF['vect'] = [np.array(v) for v in newsgroupsVects.todense()]
+
+    newsgroupsDF = newsgroupsDF.reindex(np.random.permutation(newsgroupsDF.index))
+    holdBackIndex = int(holdBackFraction * len(newsgroupsDF))
+    train_data = newsgroupsDF[holdBackIndex:].copy()
+    test_data = newsgroupsDF[:holdBackIndex].copy()
+
+    return train_data, test_data
+
 def loadSpam(holdBackFraction = .2):
     print("Loading Spam")
-    spamDF = loadEmailZip('data/Spam_Data/20021010_spam.tar.bz2', 'spam')
+    spamDF = _loadEmailZip('data/Spam_Data/20021010_spam.tar.bz2', 'spam')
     print("Loading Ham")
-    spamDF = spamDF.append(loadEmailZip('data/Spam_Data/20021010_hard_ham.tar.bz2', 'not spam'), ignore_index= True)
-    spamDF = spamDF.append(loadEmailZip('data/Spam_Data/20021010_easy_ham.tar.bz2', 'not spam'), ignore_index= True)
+    spamDF = spamDF.append(_loadEmailZip('data/Spam_Data/20021010_hard_ham.tar.bz2', 'not spam'), ignore_index= True)
+    spamDF = spamDF.append(_loadEmailZip('data/Spam_Data/20021010_easy_ham.tar.bz2', 'not spam'), ignore_index= True)
     spamDF['is_spam'] = [c == 'spam' for c in spamDF['category']]
     spamDF['binary'] = spamDF['is_spam']
 
     print("Converting to vectors")
-    stop_words_nltk = nltk.corpus.stopwords.words('english')
-    snowball = nltk.stem.snowball.SnowballStemmer('english')
-
 
     spamDF['tokenized_text'] = spamDF['text'].apply(lambda x: nltk.word_tokenize(x))
     spamDF['normalized_text'] = spamDF['tokenized_text'].apply(lambda x: normlizeTokens(x, stopwordLst = None, stemmer = None))
@@ -175,6 +178,27 @@ def loadObamaClinton(holdBackFraction = .2):
     holdBackIndex = int(holdBackFraction * len(ObamaClintonReleases))
     train_data = ObamaClintonReleases[holdBackIndex:].copy()
     test_data = ObamaClintonReleases[:holdBackIndex].copy()
+
+    return train_data, test_data
+
+def loadReddit(holdBackFraction = .2):
+    print("Loading Reddit data")
+    redditDf = pandas.read_csv('data/reddit.csv')
+    redditDf = redditDf.dropna()
+    redditDf['category'] =redditDf['subreddit']
+
+    print("Converting to vectors")
+    redditDf['tokenized_text'] = redditDf['text'].apply(lambda x: nltk.word_tokenize(x))
+    redditDf['normalized_text'] = redditDf['tokenized_text'].apply(lambda x: normlizeTokens(x, stopwordLst = stop_words_nltk, stemmer = snowball))
+
+    redditTFVectorizer = sklearn.feature_extraction.text.TfidfVectorizer(max_df=0.5, min_df=3, stop_words='english', norm='l2')
+    redditTFVects = redditTFVectorizer.fit_transform([' '.join(l) for l in redditDf['normalized_text']])
+    redditDf['vect'] = [np.array(v) for v in redditTFVects.todense()]
+
+    redditDf = redditDf.reindex(np.random.permutation(redditDf.index))
+    holdBackIndex = int(holdBackFraction * len(redditDf))
+    train_data = redditDf[holdBackIndex:].copy()
+    test_data = redditDf[:holdBackIndex].copy()
 
     return train_data, test_data
 
@@ -250,32 +274,75 @@ class NaiveBayesClassifier:
         return spam_probability(self.word_probs, message) #Now we have all we need to classify a message
 
 def evaluateClassifier(clf, testDF):
-    classified = [(row['binary'], clf.classify(row['normalized_text']))
-                  for index, row in testDF.iterrows()]
-    counts = collections.Counter((actual == True, predicted_probability > 0.5)
-                         for actual, predicted_probability in classified)
-    precision = counts[(True,True)]/(counts[(False,True)]+counts[(True,True)]) #True positives over all positive predictions
+    predictions = clf.predict(np.stack(testDF['vect'], axis=1)[0])
+    classes = []
+    results = {
+        'error-rate' : [],
+        'auc' : [],
+        'PRE' : [],
+        'AP' : [],
+        'RE' : [],
+        }
+    for cat in set(testDF['category']):
+        preds = [True if (c == cat) else False for c in predictions]
+        acts = [True if (c == cat) else False for c in testDF['category']]
+        classes.append(cat)
+        results['auc'].append(sklearn.metrics.roc_auc_score(preds, acts))
+        results['AP'].append(sklearn.metrics.average_precision_score(preds, acts))
+        results['PRE'].append(sklearn.metrics.precision_score(preds, acts))
+        results['RE'].append(sklearn.metrics.recall_score(preds, acts))
+        results['error-rate'].append(1 -  sklearn.metrics.accuracy_score(preds, acts))
+    df = pandas.DataFrame(results, index=classes)
+    #print(df)
+    return df
 
-    recall = counts[(True,True)]/(counts[(True,False)]+counts[(True,True)])#what fraction of positives identified
+def plotMultiROC(clf, testDF):
+    #By making the column names variables we can easily use this function on new data sets
 
-    f_measure = 2 * (precision * recall)/(precision + recall)
-    print("precision: {:.3f}\nrecall: {:.3f}\nf_measure: {:.3f}".format(precision, recall, f_measure))
+    #Get the names of each of the possible classes and the probabiltiess
+    classes = clf.classes_
+    try:
+        probs = clf.predict_proba(np.stack(testDF['vect'], axis=1)[0])
+    except AttributeError:
+        print("The {} classifier does not apear to support prediction probabilties, so an ROC curve can't be created. You can try adding `probability = True` to the model specification or use a different model.".format(type(clf)))
+        return
+    predictions = clf.predict(np.stack(testDF['vect'], axis=1)[0])
 
-    words = sorted(clf.word_probs,key=p_spam_given_word)
-    print("\nTop category 1 words:\n{}".format('\n'.join(["{}, {:.3f}".format(w, p2) for w, p1, p2 in words[:10]])))
-    print("\nTop category 2 words:\n{}".format('\n'.join(["{}, {:.3f}".format(w, p1) for w, p1, p2 in words[-10:]])))
+    #setup axis for plotting
+    fig, ax = plt.subplots()
 
-def plotClassifier(clf, testDF):
-    x, y, _ = sklearn.metrics.roc_curve(testDF['binary'], [clf.classify(d) for d in testDF['normalized_text']])
-    roc_auc = sklearn.metrics.auc(x,y)
-    plt.figure()
-    plt.plot(x,y, color = 'darkorange', lw = 2, label='ROC curve (area = %0.2f)' % roc_auc)
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver operating characteristic curve')
-    plt.legend(loc="lower right")
+    #We can return the AUC values, in case they are useful
+    aucVals = []
+    for classIndex, className in enumerate(classes):        #Setup binary classes
+        truths = [1 if c == className else 0 for c in testDF['category']]
+        predict = [1 if c == className else 0 for c in predictions]
+        scores = probs[:, classIndex]
+
+        #Get the ROC curve
+        fpr, tpr, thresholds = sklearn.metrics.roc_curve(truths, scores)
+        auc = sklearn.metrics.auc(fpr, tpr)
+        aucVals.append(auc)
+
+        #Plot the class's line
+        ax.plot(fpr, tpr, label = "{} (AUC ${:.3f}$)".format(className.split(':')[0], auc))
+
+    #Make the plot nice, then display it
+    ax.set_title('Receiver Operating Characteristics')
+    plt.plot([0,1], [0,1], color = 'k', linestyle='--')
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.legend(loc = 'lower right')
+    plt.show()
+    plt.close()
+    #return aucVals
+
+def plotConfusionMatrix(clf, testDF):
+    predictions = clf.predict(np.stack(testDF['vect'], axis=1)[0])
+    mat = confusion_matrix(predictions, testDF['category'])
+    seaborn.heatmap(mat.T, square=True, annot=True, fmt='d', cbar=False,
+                    xticklabels=testDF['category'].unique(), yticklabels=testDF['category'].unique())
+    plt.xlabel('true label')
+    plt.ylabel('predicted label')
+    plt.title("Confusion Matrix")
     plt.show()
     plt.close()

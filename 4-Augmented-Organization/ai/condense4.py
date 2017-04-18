@@ -220,7 +220,7 @@ def _display(g, val):
     pal = ig.GradientPalette("red", "blue", gPlot.vcount())
     gPlot.vs['label_color'] = [pal[int(v)] for v in ranks]
     gPlot.vs['color'] = [pal[int(v)] for v in ranks]
-    gPlot.vs['label_size'] = (np.abs(30 + 40 * (val / np.max(val) - 1))).tolist()
+    gPlot.vs['label_size'] = (10 + 20 * np.abs(val / np.max(val))).tolist()
     return ig.plot(gPlot, layout = layout, edge_width = 0.2, vertex_size = .5)
 
 def displayNeighbours(g, nodeName, step = 2):

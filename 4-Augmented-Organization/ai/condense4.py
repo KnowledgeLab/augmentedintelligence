@@ -177,19 +177,23 @@ def posCooccurrence(sentences, *posType, makeMatrix = False):
                             'label' : wordLst,
                             'kind' : kinds,
                             'color' : colours,
+                            'label_color' : colours,
                            },
             edge_attrs = {'weight' : weights})
         return g
 
-def reduceGraph(g, maxEdge = 500, maxNode = 500):
+def reduceGraph(g, maxEdge = 1000, maxNode = 200):
     numEdge = g.ecount()
     numNode = g.vcount()
     flipper = True
-    while numEdge > maxEdge or numNode > maxNode:
+    while numNode > maxNode:
+        medianDegree = np.percentile(g.vs.degree(), 20)
+        g = g.subgraph(g.vs.select(lambda x: x.degree() > medianDegree))
+        numNode = g.vcount()
+    while numEdge > maxEdge:
         medianEdge = np.percentile(g.es['weight'], 20)
         g = g.subgraph_edges(g.es.select(lambda x: x['weight'] > medianEdge))
         numEdge = g.ecount()
-        numNode = g.vcount()
     return g
 
 def displayBetweeness(g):
@@ -214,9 +218,10 @@ def _display(g, val):
     ranks = np.empty(len(val), int)
     ranks[val.argsort()] = np.arange(len(val))
     pal = ig.GradientPalette("red", "blue", gPlot.vcount())
+    gPlot.vs['label_color'] = [pal[int(v)] for v in ranks]
     gPlot.vs['color'] = [pal[int(v)] for v in ranks]
-    #gPlot.vs['label'] = ['{:.2f}'.format(b) for b in val]
-    return ig.plot(gPlot, layout = layout, edge_width = 0.2)
+    gPlot.vs['label_size'] = (np.abs(30 + 40 * (val / np.max(val) - 1))).tolist()
+    return ig.plot(gPlot, layout = layout, edge_width = 0.2, vertex_size = .5)
 
 def displayNeighbours(g, nodeName, step = 2):
     try:
@@ -229,8 +234,13 @@ def displayNeighbours(g, nodeName, step = 2):
             newCollection |= set(g.neighbors(n))
         neighbors |= newCollection
     gPlot = g.subgraph(g.vs.select(neighbors))
-    #gPlot.vs['color'] = 'red'
     gPlot.vs.find(nodeName)['color'] = 'yellow'
+    gPlot.vs.find(nodeName)['label_color'] = 'yellow'
     layout = gPlot.layout_fruchterman_reingold()
-    ig.plot(gPlot, layout = layout, edge_width = 0.2, target = 'data/temp.png')
+    ig.plot(gPlot, layout = layout, edge_width = 0.2, target = 'data/temp.png', vertex_size = .5, label_size = 40)
+    return 'data/temp.png'
+
+def displayGraph(g):
+    layout = g.layout_fruchterman_reingold(weights = 'weight', repulserad = 10)
+    ig.plot(g, layout = layout, edge_width = 0.2, target = 'data/temp.png', vertex_size = .5, label_size = 40)
     return 'data/temp.png'

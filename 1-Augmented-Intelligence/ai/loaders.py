@@ -16,7 +16,7 @@ import tarfile
 stop_words_nltk = nltk.corpus.stopwords.words('english')
 snowball = nltk.stem.snowball.SnowballStemmer('english')
 
-dataDirectory = '/Users/Reid/Dropbox/Chicago/Knowledge-Lab/Augmented-Intelligence/data'
+dataDirectory = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
 
 def normalizeTokens(tokenLst, stopwordLst = None, stemmer = None, lemmer = None, vocab = None):
     #We can use a generator here as we just need to iterate over it
@@ -157,6 +157,6 @@ def loadReddit(holdBackFraction = .2):
     print("Loading Reddit data")
     redditDf = pandas.read_csv('data/reddit.csv')
     redditDf = redditDf.dropna()
-    redditDf['category'] =redditDf['subreddit']
+    redditDf['category'] = [s.split(':')[0] for s in redditDf['subreddit']]
     print("Converting to vectors")
     return generateVecs(redditDf)

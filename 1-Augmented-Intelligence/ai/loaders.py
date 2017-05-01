@@ -62,6 +62,14 @@ def loadDir(targetDir, category):
 
     return pandas.DataFrame(senDict)
 
+def trainTestSplit(df, holdBackFraction = .2):
+    df = df.reindex(np.random.permutation(df.index))
+    holdBackIndex = int(holdBackFraction * len(df))
+    train_data = df[holdBackIndex:].copy()
+    test_data = df[:holdBackIndex].copy()
+
+    return train_data, test_data
+
 def _loadEmailZip(targetFile, category):
     # regex for stripping out the leading "Subject:" and any spaces after it
     subject_regex = re.compile(r"^Subject:\s+")
@@ -95,7 +103,7 @@ def generateVecs(df, sents = False):
 
     ngCountVectorizer = sklearn.feature_extraction.text.TfidfVectorizer(max_df=0.5, min_df=3, stop_words='english', norm='l2')
     newsgroupsVects = ngCountVectorizer.fit_transform([' '.join(l) for l in df['normalized_text']])
-    df['vect'] = [np.array(v) for v in newsgroupsVects.todense().flatten()]
+    df['vect'] = [np.array(v).flatten() for v in newsgroupsVects.todense()]
 
     return df
 
@@ -114,9 +122,10 @@ def loadNewsGroups(categories = ['comp.sys.mac.hardware', 'comp.windows.x', 'mis
 
 def loadSenateSmall():
     print("Loading senate data")
-    senReleasesDF = pandas.read_csv(os.path.join(dataDirectory, "senReleasesTraining.csv"))
+    senReleasesDF = pandas.read_csv(os.path.join(dataDirectory, "ObamaClintonSandersReleases.csv"))
     senReleasesDF = senReleasesDF.dropna(axis=0, how='any')
 
+    senReleasesDF['category'] = senReleasesDF['targetSenator']
     print("Converting to vectors")
     return generateVecs(senReleasesDF)
 
@@ -143,3 +152,11 @@ def loadSpam(holdBackFraction = .2):
 
     print("Converting to vectors")
     return generateVecs(spamDF)
+
+def loadReddit(holdBackFraction = .2):
+    print("Loading Reddit data")
+    redditDf = pandas.read_csv('data/reddit.csv')
+    redditDf = redditDf.dropna()
+    redditDf['category'] =redditDf['subreddit']
+    print("Converting to vectors")
+    return generateVecs(redditDf)

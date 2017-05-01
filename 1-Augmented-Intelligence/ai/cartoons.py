@@ -17,6 +17,12 @@ def plotter(df):
     plt.close()
 
 def plotregions(df, clf, h = .02):
+    """
+    pca = sklearn.decomposition.PCA(n_components = 2)
+    pca.fit(np.stack(df['vect'], axis=0))
+    reduced_data = pca.transform(np.stack(df['vect'], axis=0))
+    """
+
     fig, ax = plt.subplots()
     ax.axis('off')
     pallet = seaborn.color_palette(palette='rainbow', n_colors= len(set(df['category'])))
@@ -28,6 +34,9 @@ def plotregions(df, clf, h = .02):
     for i, cat in enumerate(set(df['category'])):
         a = np.stack(df[df['category'] == cat]['vect'])
         ax.scatter(a[:,0], a[:, 1], c = pallet[i], label = cat)
+    ax.legend(loc = 'center right', title = 'Categories')
+    plt.show()
+    plt.close()
 
 def random(numPerCategory = 500):
     datDict = {
@@ -40,7 +49,10 @@ def random(numPerCategory = 500):
 def andSplit(noise = 0, numPerCategory = 500):
     def genPoint(cat):
         y = np.random.random_sample() * 2 - 1
-        x = np.random.random_sample() - cat - (np.random.random_sample() - cat) * noise
+        if noise >= 0:
+            x = np.random.random_sample() - cat - (np.random.random_sample() - cat) * noise
+        else:
+            x = (1 - noise * np.random.random_sample()) - cat
         return np.array([x, y])
     datDict = {
         'vect' : [genPoint(i % 2) for i in range(2 * numPerCategory)],

@@ -1,6 +1,9 @@
 import numpy as np #arrays
 import matplotlib.pyplot as plt #Plots
 
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 import sklearn
 import sklearn.feature_extraction.text
 import sklearn.decomposition
@@ -96,5 +99,31 @@ def plotConfusionMatrix(clf, testDF):
     plt.xlabel('true label')
     plt.ylabel('predicted label')
     plt.title("Confusion Matrix")
+    plt.show()
+    plt.close()
+
+
+def visulizeClusters(clf, df):
+    pca = sklearn.decomposition.PCA(n_components = 2).fit(np.stack(df['vect'], axis=1)[0])
+    reduced_data = pca.transform(np.stack(df['vect'], axis=1)[0])
+
+    categories = list(set(df['category']))
+    palletTrue = seaborn.color_palette("Paired", len(categories))
+    palletPred = seaborn.color_palette("cubehelix", len(set((clf.labels_))))
+
+    coloursDict = {c : palletTrue[i] for i, c in enumerate(categories)}
+    coloursTrue = [coloursDict[c] for c in df['category']]
+    colorsPred = [palletPred[l] for l in clf.labels_]
+
+
+    fig = plt.figure(figsize = (8,12))
+    axT = fig.add_subplot(211)
+    axP = fig.add_subplot(212)
+
+    axT.scatter(reduced_data[:, 0], reduced_data[:, 1], alpha = 0.5, color = coloursTrue)
+    axT.set_title('True Classes')
+
+    axP.scatter(reduced_data[:, 0], reduced_data[:, 1], color = colorsPred, alpha = 0.5)
+    axP.set_title('Predicted Clusters')
     plt.show()
     plt.close()
